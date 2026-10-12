@@ -1,0 +1,122 @@
+"""AIRE-experiments2: Multi-band NMF experiments using RIPHAMMER."""
+from snakemake.utils import min_version
+min_version("8.10.0")
+
+configfile: "workflow/config.yaml"
+
+CONDA_ENV = "envs/riphammer.yaml"
+
+def all_samples(resolution=None):
+    samples = []
+    for group, ginfo in config["samples"].items():
+        min_res = ginfo.get("min_resolution", 100000)
+        if resolution and resolution < min_res:
+            continue
+        for s in ginfo["entries"]:
+            samples.append(s)
+    return samples
+
+def all_sample_names(resolution=None):
+    return [s["name"] for s in all_samples(resolution)]
+
+RESOLUTIONS = config["resolutions"]
+K = config["nmf"]["n_components"]
+
+
+rule all:
+    """Run full pipeline for all resolutions."""
+    input:
+        expand("output/tad_{res}_k{k}/done", res=RESOLUTIONS, k=K),
+        expand("plot/contact_maps_{res}_k{k}.png", res=RESOLUTIONS, k=K),
+
+
+rule vectorize:
+    """Convert mcool files to feature matrix."""
+    output:
+        npy = "output/features_{res}/X_bulk.npy",
+        feat = "output/features_{res}/features.tsv",
+        cells = "output/features_{res}/cells.tsv",
+    log:
+        "logs/vectorize_{res}.log",
+    benchmark:
+        "benchmarks/vectorize_{res}.txt"
+    conda:
+        CONDA_ENV
+    shell:
+        """
+        python src/vectorize.py \
+            --config workflow/config.yaml \
+            --resolution {wildcards.res} \
+            --output output/features_{wildcards.res} \
+            >& {log}
+        """
+
+
+rule fit:
+    """Run Multi-band NMF."""
+    input:
+        npy = "output/features_{res}/X_bulk.npy",
+    output:
+        W = "output/nmf_{res}/W_nmf_k{k}.tsv",
+        H = "output/nmf_{res}/H_nmf_k{k}.tsv",
+    log:
+        "logs/fit_{res}_k{k}.log",
+    benchmark:
+        "benchmarks/fit_{res}_k{k}.txt"
+    conda:
+        CONDA_ENV
+    shell:
+        """
+        riphammer fit \
+            -i output/features_{wildcards.res} \
+            -o output/nmf_{wildcards.res} \
+            --k {wildcards.k} \
+            --n-iter {config[nmf][max_iter]} \
+            --seed {config[nmf][seed]} \
+            >& {log}
+        """
+
+
+rule tad:
+    """Detect TADs from NMF components."""
+    input:
+        W = "output/nmf_{res}/W_nmf_k{k}.tsv",
+    output:
+        done = touch("output/tad_{res}_k{k}/done"),
+    log:
+        "logs/tad_{res}_k{k}.log",
+    benchmark:
+        "benchmarks/tad_{res}_k{k}.txt"
+    conda:
+        CONDA_ENV
+    shell:
+        """
+        riphammer tad \
+            -i output/nmf_{wildcards.res} \
+            -o output/tad_{wildcards.res}_k{wildcards.k} \
+            --k {wildcards.k} \
+            --resolution {wildcards.res} \
+            --window {config[tad][window]} \
+            >& {log}
+        """
+
+
+rule plot_contact_maps:
+    """Visualize NMF component contact maps."""
+    input:
+        W = "output/nmf_{res}/W_nmf_k{k}.tsv",
+    output:
+        png = "plot/contact_maps_{res}_k{k}.png",
+    log:
+        "logs/plot_contact_maps_{res}_k{k}.log",
+    conda:
+        CONDA_ENV
+    shell:
+        """
+        python src/plot_contact_maps.py \
+            --input output/nmf_{wildcards.res} \
+            --k {wildcards.k} \
+            --resolution {wildcards.res} \
+            --output {output.png} \
+            >& {log}
+        """

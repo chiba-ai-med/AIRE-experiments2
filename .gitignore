@@ -1,0 +1,10 @@
+data/
+output/
+logs/
+benchmarks/
+.snakemake/
+__pycache__/
+*.pyc
+.DS_Store
+._*
+.claude/

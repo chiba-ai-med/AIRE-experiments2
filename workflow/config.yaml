@@ -1,0 +1,55 @@
+genome: mm10
+
+samples:
+  thymocyte:
+    min_resolution: 1000
+    entries:
+      - name: CD4_SP_thymocyte
+        mcool: data/4dn_thymocyte/CD4_SP_thymocyte.mcool
+      - name: CD8_SP_thymocyte
+        mcool: data/4dn_thymocyte/CD8_SP_thymocyte.mcool
+      - name: DN_thymocyte
+        mcool: data/4dn_thymocyte/DN_thymocyte.mcool
+      - name: DP_thymocyte
+        mcool: data/4dn_thymocyte/DP_thymocyte.mcool
+      - name: DP2_thymocyte_ctrl
+        mcool: data/4dn_thymocyte/DP2_thymocyte_ctrl.mcool
+      - name: DP2_thymocyte_Tcf1KO
+        mcool: data/4dn_thymocyte/DP2_thymocyte_Tcf1KO.mcool
+      - name: Mature_Treg_GFP
+        mcool: data/4dn_thymocyte/Mature_Treg_GFP.mcool
+      - name: Mature_Treg_Thy1.1
+        mcool: data/4dn_thymocyte/Mature_Treg_Thy1.1.mcool
+      - name: Treg_precursor
+        mcool: data/4dn_thymocyte/Treg_precursor.mcool
+      - name: Treg_precursor_Foxp3low
+        mcool: data/4dn_thymocyte/Treg_precursor_Foxp3low.mcool
+      - name: Treg_precursor_Foxp3neg
+        mcool: data/4dn_thymocyte/Treg_precursor_Foxp3neg.mcool
+  mTEC:
+    min_resolution: 10000
+    entries:
+      - name: mTEC_WT
+        mcool: data/mtec/processed/mtec_hic.mcool
+  brain:
+    min_resolution: 100000
+    entries:
+      - name: Bonev_ES
+        mcool: data/brain/processed/brain_hic_es.mcool
+      - name: Bonev_NPC
+        mcool: data/brain/processed/brain_hic_npc.mcool
+      - name: Bonev_CN
+        mcool: data/brain/processed/brain_hic_cn.mcool
+
+resolutions:
+  - 100000
+  - 25000
+  - 10000
+
+nmf:
+  n_components: 8
+  max_iter: 500
+  seed: 42
+
+tad:
+  window: 500000
