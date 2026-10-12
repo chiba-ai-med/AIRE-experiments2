@@ -153,3 +153,35 @@ Sox2, Pou5f1, Neurog2 など発生関連遺伝子座でのES vs 分化のコン�
 | Fig 5 | 多解像度 + Aire locus | aire_locus_10kb_deep.png + aire_locus_10kb_insulation.png |
 | Fig 6 | Brain データセット | brain_dev_k2_100kb.png + brain_dev_loci_100kb.png |
 | Supp | ロバストネス + スケーラビリティ | robustness_analysis.png + scalability_benchmark.png |
+
+---
+
+## リプロダクション表
+
+全プロットの生成スクリプトは `src/plot_*.py` に保存済み。レポジトリルートから実行。
+
+| プロット | スクリプト | 計算 | 主な入力 |
+|---|---|---|---|
+| method_comparison_4way.png | src/plot_method_comparison_4way.py | 軽量 | comparison_results.npz, thunder_H_final.tsv |
+| method_comparison_simulation.png | src/plot_method_comparison_simulation.py | NMF+PCA再実行 | X_bulk.npy, H_nmf_k4.tsv |
+| simulation_fraction_recovery.png | src/plot_simulation_fraction_recovery.py | NNLS | H_nmf_k4.tsv, true_fractions.tsv |
+| biological_discovery_comparison.png | src/plot_biological_discovery_comparison.py | RIPHAMMER+StdNMF再実行 | X_bulk.npy, tad_comparison.npz |
+| locus_discovery_comparison.png | src/plot_locus_discovery_comparison.py | RIPHAMMER+StdNMF再実行 | X_bulk.npy, thunder_W_k4.tsv |
+| robustness_analysis.png | src/plot_robustness_analysis.py | 複数NMF再実行 | X_bulk.npy, features.tsv |
+| scalability_benchmark.png | src/plot_scalability_benchmark.py | タイミングベンチ | X_bulk.npy, features.tsv |
+| noise_robustness.png | src/plot_noise_robustness.py | 複数NMF再実行 | X_bulk.npy, features.tsv |
+| aire_collaborator_summary.png | src/plot_aire_collaborator_summary.py | 軽量 | nmf_10000/* |
+| aire_locus_10kb_components.png | src/plot_aire_locus_10kb_components.py | 軽量 | nmf_10000/*, mtec_hic.mcool |
+| aire_locus_10kb_deep.png | src/plot_aire_locus_10kb_deep.py | 軽量 | nmf_10000/*, tad_10000_k8/* |
+| aire_locus_10kb_selected.png | src/plot_aire_locus_10kb_selected.py | 軽量 | nmf_10000/*, mtec_hic.mcool |
+| aire_locus_10kb_differential.png | src/plot_aire_locus_10kb_differential.py | 軽量 | nmf_10000/* |
+| aire_locus_10kb_insulation.png | src/plot_aire_locus_10kb_insulation.py | 軽量 | nmf_10000/*, tad_10000_k8/* |
+| brain_dev_k2_100kb.png | src/plot_brain_dev_k2_100kb.py | 軽量 | nmf_brain_100000_k2/*, brain_hic_*.mcool |
+| brain_dev_loci_100kb.png | src/plot_brain_dev_loci_100kb.py | 軽量 | nmf_brain_100000/*, brain_hic_*.mcool |
+
+THUNDER関連Rスクリプト:
+- `src/run_thunder_fullgenome.R` — THUNDER 3段パイプライン (~28分)
+- `src/run_thunder_extract_W.R` — W行列抽出 (nrun=1, ~5分)
+
+全コードは会話トランスクリプト（2715f6e4-0d5d-4392-9bf5-d565ce7ff9f3.jsonl）から抽出。
+詳細は `src/REPRODUCIBILITY.md` を参照。
