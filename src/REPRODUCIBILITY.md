@@ -26,7 +26,7 @@ from the repository root directory.
 |---|---|---|---|
 | `plot_simulation_fraction_recovery.py` | simulation_fraction_recovery.png | Light (NNLS only) | nmf_simulation_100000/H_nmf_k4.tsv, true_fractions.tsv |
 | `plot_method_comparison_simulation.py` | method_comparison_simulation.png | **Runs NMF + PCA** | X_bulk.npy, features.tsv, true_fractions.tsv |
-| `plot_method_comparison_4way.py` | method_comparison_4way.png | Light (reads pre-computed) | comparison_results.npz, thunder_H_final.tsv |
+| `plot_method_comparison_4way.py` | method_comparison_4way.png | Light (reads pre-computed) | comparison_results.npz, thunder_H_fullgenome.tsv |
 | `plot_biological_discovery_comparison.py` | biological_discovery_comparison.png | **Runs RIPHAMMER + StdNMF** | X_bulk.npy, features.tsv, tad_comparison.npz, thunder_W_k4.tsv |
 | `plot_locus_discovery_comparison.py` | locus_discovery_comparison.png | **Runs RIPHAMMER + StdNMF** | X_bulk.npy, features.tsv, thunder_W_k4.tsv |
 | `plot_robustness_analysis.py` | robustness_analysis.png | **Heavy: multiple NMF runs** | X_bulk.npy, features.tsv, true_fractions.tsv |

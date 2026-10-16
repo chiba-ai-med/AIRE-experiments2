@@ -232,7 +232,7 @@ for res in [100000]:
     
     # Top mTEC-enriched regions (by mean log ratio per 10-bin window)
     top_regions = short_range.groupby('chrom').apply(
-        lambda g: g.nlargest(20, 'log_ratio')[['bin1', 'bin2', 'log_ratio']].head(5)
+        lambda g: g.nlargest(20, 'log_ratio')[['chrom', 'bin1', 'bin2', 'log_ratio']].head(5)
     ).reset_index(drop=True)
     
     print(f"\n   Top mTEC-enriched contacts (100kb, short-range):")

@@ -51,5 +51,8 @@ nmf:
   max_iter: 500
   seed: 42
 
+brain:
+  k_values: [2, 3]
+
 tad:
   window: 500000

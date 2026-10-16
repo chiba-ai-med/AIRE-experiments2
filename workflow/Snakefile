@@ -1,11 +1,32 @@
-"""AIRE-experiments2: Multi-band NMF experiments using RIPHAMMER."""
+"""RIPHAMMER validation pipeline: simulation + mTEC + brain analyses.
+
+Full DAG: vectorize → NMF fit → TAD detection → comparison → plots.
+Every rule has conda: + log: + benchmark: for reproducibility.
+"""
 from snakemake.utils import min_version
 min_version("8.10.0")
 
 configfile: "workflow/config.yaml"
 
 CONDA_ENV = "envs/riphammer.yaml"
+CONDA_ENV_R = "envs/thunder.yaml"
 
+# ── Derived constants ────────────────────────────────────────────────
+RESOLUTIONS = config["resolutions"]           # [100000, 25000, 10000]
+K_DEFAULT = config["nmf"]["n_components"]     # 8
+MAX_ITER = config["nmf"]["max_iter"]          # 500
+SEED = config["nmf"]["seed"]                  # 42
+TAD_WINDOW = config["tad"]["window"]          # 500000
+
+# Brain-specific K values
+BRAIN_K_VALUES = config.get("brain", {}).get("k_values", [2, 3])
+
+# Constrain {res} wildcard to numeric-only resolutions (avoids
+# matching "brain_100000" in the generic fit/tad rules).
+wildcard_constraints:
+    res = r"\d+",
+
+# ── Helper functions ─────────────────────────────────────────────────
 def all_samples(resolution=None):
     samples = []
     for group, ginfo in config["samples"].items():
@@ -16,32 +37,62 @@ def all_samples(resolution=None):
             samples.append(s)
     return samples
 
-def all_sample_names(resolution=None):
-    return [s["name"] for s in all_samples(resolution)]
 
-RESOLUTIONS = config["resolutions"]
-K = config["nmf"]["n_components"]
-
-
+# ── Target rule ──────────────────────────────────────────────────────
 rule all:
-    """Run full pipeline for all resolutions."""
+    """Produce all final outputs: NMF results, TAD calls, and all 16 plots."""
     input:
-        expand("output/tad_{res}_k{k}/done", res=RESOLUTIONS, k=K),
-        expand("plot/contact_maps_{res}_k{k}.png", res=RESOLUTIONS, k=K),
+        # --- mTEC+thymocyte NMF + TAD ---
+        expand("output/nmf_{res}/W_nmf_k{k}.tsv",
+               res=RESOLUTIONS, k=K_DEFAULT),
+        expand("output/tad_{res}_k{k}/done",
+               res=RESOLUTIONS, k=K_DEFAULT),
+        # --- Brain NMF + TAD ---
+        expand("output/nmf_brain_100000/W_nmf_k{k}.tsv", k=BRAIN_K_VALUES),
+        "output/nmf_brain_100000_k2/W_nmf_k2.tsv",
+        "output/tad_brain_100000_k3/done",
+        # --- Simulation NMF ---
+        "output/nmf_simulation_100000/W_nmf_k4.tsv",
+        # --- THUNDER ---
+        "output/simulation_100000/thunder_H_fullgenome.tsv",
+        "output/simulation_100000/thunder_W_k4.tsv",
+        # --- Intermediate comparison data ---
+        "output/simulation_100000/comparison_results.npz",
+        "output/simulation_100000/tad_comparison.npz",
+        # --- All 16 plots ---
+        "plot/simulation_fraction_recovery.png",
+        "plot/method_comparison_simulation.png",
+        "plot/method_comparison_4way.png",
+        "plot/biological_discovery_comparison.png",
+        "plot/locus_discovery_comparison.png",
+        "plot/robustness_analysis.png",
+        "plot/scalability_benchmark.png",
+        "plot/noise_robustness.png",
+        "plot/aire_collaborator_summary.png",
+        "plot/aire_locus_10kb_components.png",
+        "plot/aire_locus_10kb_deep.png",
+        "plot/aire_locus_10kb_differential.png",
+        "plot/aire_locus_10kb_insulation.png",
+        "plot/aire_locus_10kb_selected.png",
+        "plot/brain_dev_k2_100kb.png",
+        "plot/brain_dev_loci_100kb.png",
+        expand("plot/contact_maps_{res}_k{k}.png",
+               res=RESOLUTIONS, k=K_DEFAULT),
 
+
+# =====================================================================
+# Phase 0: Vectorize (mcool → feature matrices)
+# =====================================================================
 
 rule vectorize:
-    """Convert mcool files to feature matrix."""
+    """Convert mcool files to feature matrices (mTEC + thymocyte)."""
     output:
-        npy = "output/features_{res}/X_bulk.npy",
-        feat = "output/features_{res}/features.tsv",
+        npy   = "output/features_{res}/X_bulk.npy",
+        feat  = "output/features_{res}/features.tsv",
         cells = "output/features_{res}/cells.tsv",
-    log:
-        "logs/vectorize_{res}.log",
-    benchmark:
-        "benchmarks/vectorize_{res}.txt"
-    conda:
-        CONDA_ENV
+    log:    "logs/vectorize_{res}.log"
+    benchmark: "benchmarks/vectorize_{res}.txt"
+    conda:  CONDA_ENV
     shell:
         """
         python src/vectorize.py \
@@ -52,43 +103,130 @@ rule vectorize:
         """
 
 
+rule vectorize_brain:
+    """Convert brain-only mcool files to feature matrix (100kb)."""
+    output:
+        npy   = "output/features_brain_100000/X_bulk.npy",
+        feat  = "output/features_brain_100000/features.tsv",
+        cells = "output/features_brain_100000/cells.tsv",
+    log:    "logs/vectorize_brain_100000.log"
+    benchmark: "benchmarks/vectorize_brain_100000.txt"
+    conda:  CONDA_ENV
+    shell:
+        """
+        python src/vectorize_brain.py \
+            --config workflow/config.yaml \
+            --resolution 100000 \
+            --output output/features_brain_100000 \
+            >& {log}
+        """
+
+
+# =====================================================================
+# Phase 1: NMF fit
+# =====================================================================
+
 rule fit:
-    """Run Multi-band NMF."""
+    """Run Multi-band NMF (mTEC + thymocyte)."""
     input:
         npy = "output/features_{res}/X_bulk.npy",
     output:
         W = "output/nmf_{res}/W_nmf_k{k}.tsv",
         H = "output/nmf_{res}/H_nmf_k{k}.tsv",
-    log:
-        "logs/fit_{res}_k{k}.log",
-    benchmark:
-        "benchmarks/fit_{res}_k{k}.txt"
-    conda:
-        CONDA_ENV
+    log:    "logs/fit_{res}_k{k}.log"
+    benchmark: "benchmarks/fit_{res}_k{k}.txt"
+    conda:  CONDA_ENV
     shell:
         """
         riphammer fit \
             -i output/features_{wildcards.res} \
             -o output/nmf_{wildcards.res} \
             --k {wildcards.k} \
-            --n-iter {config[nmf][max_iter]} \
-            --seed {config[nmf][seed]} \
+            --n-iter {MAX_ITER} \
+            --seed {SEED} \
             >& {log}
         """
 
 
+rule fit_brain:
+    """Run Multi-band NMF on brain data (100kb, variable K)."""
+    input:
+        npy = "output/features_brain_100000/X_bulk.npy",
+    output:
+        W = "output/nmf_brain_100000/W_nmf_k{k}.tsv",
+        H = "output/nmf_brain_100000/H_nmf_k{k}.tsv",
+    log:    "logs/fit_brain_100000_k{k}.log"
+    benchmark: "benchmarks/fit_brain_100000_k{k}.txt"
+    conda:  CONDA_ENV
+    shell:
+        """
+        riphammer fit \
+            -i output/features_brain_100000 \
+            -o output/nmf_brain_100000 \
+            --k {wildcards.k} \
+            --n-iter {MAX_ITER} \
+            --seed {SEED} \
+            >& {log}
+        """
+
+
+rule fit_brain_k2:
+    """Run Multi-band NMF on brain data (100kb, K=2, separate output dir)."""
+    input:
+        npy = "output/features_brain_100000/X_bulk.npy",
+    output:
+        W = "output/nmf_brain_100000_k2/W_nmf_k2.tsv",
+        H = "output/nmf_brain_100000_k2/H_nmf_k2.tsv",
+    log:    "logs/fit_brain_100000_k2.log"
+    benchmark: "benchmarks/fit_brain_100000_k2.txt"
+    conda:  CONDA_ENV
+    shell:
+        """
+        riphammer fit \
+            -i output/features_brain_100000 \
+            -o output/nmf_brain_100000_k2 \
+            --k 2 \
+            --n-iter {MAX_ITER} \
+            --seed {SEED} \
+            >& {log}
+        """
+
+
+rule fit_simulation:
+    """Run Multi-band NMF on simulation data (100kb, K=4)."""
+    input:
+        npy = "output/simulation_100000/X_bulk.npy",
+    output:
+        W = "output/nmf_simulation_100000/W_nmf_k4.tsv",
+        H = "output/nmf_simulation_100000/H_nmf_k4.tsv",
+    log:    "logs/fit_simulation_100000_k4.log"
+    benchmark: "benchmarks/fit_simulation_100000_k4.txt"
+    conda:  CONDA_ENV
+    shell:
+        """
+        riphammer fit \
+            -i output/simulation_100000 \
+            -o output/nmf_simulation_100000 \
+            --k 4 \
+            --n-iter {MAX_ITER} \
+            --seed {SEED} \
+            >& {log}
+        """
+
+
+# =====================================================================
+# Phase 2: TAD detection
+# =====================================================================
+
 rule tad:
-    """Detect TADs from NMF components."""
+    """Detect TADs from NMF components (mTEC + thymocyte)."""
     input:
         W = "output/nmf_{res}/W_nmf_k{k}.tsv",
     output:
         done = touch("output/tad_{res}_k{k}/done"),
-    log:
-        "logs/tad_{res}_k{k}.log",
-    benchmark:
-        "benchmarks/tad_{res}_k{k}.txt"
-    conda:
-        CONDA_ENV
+    log:    "logs/tad_{res}_k{k}.log"
+    benchmark: "benchmarks/tad_{res}_k{k}.txt"
+    conda:  CONDA_ENV
     shell:
         """
         riphammer tad \
@@ -96,27 +234,368 @@ rule tad:
             -o output/tad_{wildcards.res}_k{wildcards.k} \
             --k {wildcards.k} \
             --resolution {wildcards.res} \
-            --window {config[tad][window]} \
+            --window {TAD_WINDOW} \
             >& {log}
         """
 
 
+rule tad_brain:
+    """Detect TADs from brain NMF K=3 components."""
+    input:
+        W = "output/nmf_brain_100000/W_nmf_k3.tsv",
+    output:
+        done = touch("output/tad_brain_100000_k3/done"),
+    log:    "logs/tad_brain_100000_k3.log"
+    benchmark: "benchmarks/tad_brain_100000_k3.txt"
+    conda:  CONDA_ENV
+    shell:
+        """
+        riphammer tad \
+            -i output/nmf_brain_100000 \
+            -o output/tad_brain_100000_k3 \
+            --k 3 \
+            --resolution 100000 \
+            --window {TAD_WINDOW} \
+            >& {log}
+        """
+
+
+# =====================================================================
+# Phase 3: THUNDER comparison (R)
+# =====================================================================
+
+rule thunder_fullgenome:
+    """Run full-genome THUNDER pipeline (~28 min)."""
+    input:
+        tsv = "output/simulation_100000/thunder_input.tsv",
+    output:
+        H = "output/simulation_100000/thunder_H_fullgenome.tsv",
+    log:    "logs/thunder_fullgenome.log"
+    benchmark: "benchmarks/thunder_fullgenome.txt"
+    conda:  CONDA_ENV_R
+    shell:
+        """
+        Rscript src/run_thunder_fullgenome.R \
+            {input.tsv} {output.H} \
+            >& {log}
+        """
+
+
+rule thunder_extract_W:
+    """Extract THUNDER W matrix (~5 min)."""
+    input:
+        tsv = "output/simulation_100000/thunder_input.tsv",
+    output:
+        W = "output/simulation_100000/thunder_W_k4.tsv",
+        H = "output/simulation_100000/thunder_H_k4_raw.tsv",
+    log:    "logs/thunder_extract_W.log"
+    benchmark: "benchmarks/thunder_extract_W.txt"
+    conda:  CONDA_ENV_R
+    shell:
+        """
+        Rscript src/run_thunder_extract_W.R \
+            {input.tsv} {output.W} {output.H} \
+            >& {log}
+        """
+
+
+# =====================================================================
+# Phase 4: Intermediate comparison data
+# =====================================================================
+
+rule comparison_3way:
+    """Compute RIPHAMMER vs Standard NMF vs PCA comparison."""
+    input:
+        X    = "output/simulation_100000/X_bulk.npy",
+        feat = "output/simulation_100000/features.tsv",
+        frac = "output/simulation_100000/true_fractions.tsv",
+        H    = "output/nmf_simulation_100000/H_nmf_k4.tsv",
+    output:
+        npz = "output/simulation_100000/comparison_results.npz",
+    log:    "logs/comparison_3way.log"
+    benchmark: "benchmarks/comparison_3way.txt"
+    conda:  CONDA_ENV
+    shell:
+        """
+        python src/compute_comparison_3way.py \
+            output/simulation_100000 \
+            output/nmf_simulation_100000 \
+            {output.npz} \
+            >& {log}
+        """
+
+
+rule tad_comparison:
+    """Compute TAD boundary comparison across 3 methods."""
+    input:
+        X    = "output/simulation_100000/X_bulk.npy",
+        feat = "output/simulation_100000/features.tsv",
+        W    = "output/nmf_simulation_100000/W_nmf_k4.tsv",
+        H    = "output/nmf_simulation_100000/H_nmf_k4.tsv",
+        tw   = "output/simulation_100000/thunder_W_k4.tsv",
+        th   = "output/simulation_100000/thunder_H_k4_raw.tsv",
+    output:
+        npz = "output/simulation_100000/tad_comparison.npz",
+    log:    "logs/tad_comparison.log"
+    benchmark: "benchmarks/tad_comparison.txt"
+    conda:  CONDA_ENV
+    shell:
+        """
+        python src/compute_tad_comparison.py \
+            output/simulation_100000 \
+            output/nmf_simulation_100000 \
+            {output.npz} \
+            >& {log}
+        """
+
+
+# =====================================================================
+# Phase 5: Plots — Simulation benchmarks
+# =====================================================================
+
+rule plot_simulation_fraction_recovery:
+    """Fraction recovery from NMF H matrix."""
+    input:
+        H    = "output/nmf_simulation_100000/H_nmf_k4.tsv",
+        frac = "output/simulation_100000/true_fractions.tsv",
+    output: "plot/simulation_fraction_recovery.png"
+    log:    "logs/plot_simulation_fraction_recovery.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_simulation_fraction_recovery.py >& {log}"
+
+
+rule plot_method_comparison_simulation:
+    """3-method comparison: RIPHAMMER vs StdNMF vs PCA (runs sklearn NMF inline)."""
+    input:
+        X    = "output/simulation_100000/X_bulk.npy",
+        feat = "output/simulation_100000/features.tsv",
+        frac = "output/simulation_100000/true_fractions.tsv",
+        H    = "output/nmf_simulation_100000/H_nmf_k4.tsv",
+    output: "plot/method_comparison_simulation.png"
+    log:    "logs/plot_method_comparison_simulation.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_method_comparison_simulation.py >& {log}"
+
+
+rule plot_method_comparison_4way:
+    """4-method comparison adding THUNDER; also produces comparison_results_final.npz."""
+    input:
+        npz     = "output/simulation_100000/comparison_results.npz",
+        thunder = "output/simulation_100000/thunder_H_fullgenome.tsv",
+    output:
+        png  = "plot/method_comparison_4way.png",
+        npz  = "output/simulation_100000/comparison_results_final.npz",
+    log:    "logs/plot_method_comparison_4way.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_method_comparison_4way.py >& {log}"
+
+
+rule plot_biological_discovery:
+    """TAD + insulation + MAE comparison (runs RIPHAMMER + StdNMF inline)."""
+    input:
+        X       = "output/simulation_100000/X_bulk.npy",
+        feat    = "output/simulation_100000/features.tsv",
+        tw      = "output/simulation_100000/thunder_W_k4.tsv",
+        th      = "output/simulation_100000/thunder_H_k4_raw.tsv",
+        tad     = "output/simulation_100000/tad_comparison.npz",
+        comp    = "output/simulation_100000/comparison_results_final.npz",
+    output: "plot/biological_discovery_comparison.png"
+    log:    "logs/plot_biological_discovery_comparison.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_biological_discovery_comparison.py >& {log}"
+
+
+rule plot_locus_discovery:
+    """Differential contact sliding-window analysis (runs RIPHAMMER + StdNMF inline).
+    Also produces: differential_correlation_windows.tsv"""
+    input:
+        X       = "output/simulation_100000/X_bulk.npy",
+        feat    = "output/simulation_100000/features.tsv",
+        tw      = "output/simulation_100000/thunder_W_k4.tsv",
+        th      = "output/simulation_100000/thunder_H_k4_raw.tsv",
+        tad     = "output/simulation_100000/tad_comparison.npz",
+    output:
+        png = "plot/locus_discovery_comparison.png",
+        tsv = "output/simulation_100000/differential_correlation_windows.tsv",
+    log:    "logs/plot_locus_discovery_comparison.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_locus_discovery_comparison.py >& {log}"
+
+
+rule plot_robustness:
+    """K-sweep + seed-sweep robustness (runs multiple NMF fits inline).
+    Also produces: robustness_results.npz"""
+    input:
+        X    = "output/simulation_100000/X_bulk.npy",
+        feat = "output/simulation_100000/features.tsv",
+        frac = "output/simulation_100000/true_fractions.tsv",
+    output:
+        png = "plot/robustness_analysis.png",
+        npz = "output/simulation_100000/robustness_results.npz",
+    log:    "logs/plot_robustness_analysis.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_robustness_analysis.py >& {log}"
+
+
+rule plot_scalability:
+    """Timing benchmarks across data sizes (runs NMF inline).
+    Also produces: scalability_results.npz"""
+    input:
+        X    = "output/simulation_100000/X_bulk.npy",
+        feat = "output/simulation_100000/features.tsv",
+    output:
+        png = "plot/scalability_benchmark.png",
+        npz = "output/simulation_100000/scalability_results.npz",
+    log:    "logs/plot_scalability_benchmark.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_scalability_benchmark.py >& {log}"
+
+
+rule plot_noise_robustness:
+    """Noise robustness across SNR levels (runs multiple NMF fits inline).
+    Also produces: noise_robustness.npz"""
+    input:
+        X    = "output/simulation_100000/X_bulk.npy",
+        feat = "output/simulation_100000/features.tsv",
+        frac = "output/simulation_100000/true_fractions.tsv",
+    output:
+        png = "plot/noise_robustness.png",
+        npz = "output/simulation_100000/noise_robustness.npz",
+    log:    "logs/plot_noise_robustness.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_noise_robustness.py >& {log}"
+
+
+# =====================================================================
+# Phase 5: Plots — mTEC / Aire locus (10kb)
+# =====================================================================
+
+rule plot_aire_collaborator_summary:
+    """Collaborator summary figure (10kb + 100kb data)."""
+    input:
+        W10   = "output/nmf_10000/W_nmf_k8.tsv",
+        H10   = "output/nmf_10000/H_nmf_k8.tsv",
+        W100  = "output/nmf_100000/W_nmf_k8.tsv",
+    output: "plot/aire_collaborator_summary.png"
+    log:    "logs/plot_aire_collaborator_summary.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_aire_collaborator_summary.py >& {log}"
+
+
+rule plot_aire_locus_10kb_components:
+    """Aire locus contact maps per NMF component (10kb)."""
+    input:
+        W = "output/nmf_10000/W_nmf_k8.tsv",
+        H = "output/nmf_10000/H_nmf_k8.tsv",
+    output: "plot/aire_locus_10kb_components.png"
+    log:    "logs/plot_aire_locus_10kb_components.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_aire_locus_10kb_components.py >& {log}"
+
+
+rule plot_aire_locus_10kb_deep:
+    """Aire locus deep analysis with TAD insulation (10kb)."""
+    input:
+        W   = "output/nmf_10000/W_nmf_k8.tsv",
+        H   = "output/nmf_10000/H_nmf_k8.tsv",
+        tad = "output/tad_10000_k8/done",
+    output: "plot/aire_locus_10kb_deep.png"
+    log:    "logs/plot_aire_locus_10kb_deep.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_aire_locus_10kb_deep.py >& {log}"
+
+
+rule plot_aire_locus_10kb_differential:
+    """Aire locus differential contact analysis (10kb)."""
+    input:
+        W = "output/nmf_10000/W_nmf_k8.tsv",
+        H = "output/nmf_10000/H_nmf_k8.tsv",
+    output: "plot/aire_locus_10kb_differential.png"
+    log:    "logs/plot_aire_locus_10kb_differential.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_aire_locus_10kb_differential.py >& {log}"
+
+
+rule plot_aire_locus_10kb_insulation:
+    """Aire locus insulation score comparison (10kb)."""
+    input:
+        H   = "output/nmf_10000/H_nmf_k8.tsv",
+        tad = "output/tad_10000_k8/done",
+    output: "plot/aire_locus_10kb_insulation.png"
+    log:    "logs/plot_aire_locus_10kb_insulation.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_aire_locus_10kb_insulation.py >& {log}"
+
+
+rule plot_aire_locus_10kb_selected:
+    """Aire locus selected component contact maps (10kb)."""
+    input:
+        W = "output/nmf_10000/W_nmf_k8.tsv",
+        H = "output/nmf_10000/H_nmf_k8.tsv",
+    output: "plot/aire_locus_10kb_selected.png"
+    log:    "logs/plot_aire_locus_10kb_selected.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_aire_locus_10kb_selected.py >& {log}"
+
+
+# =====================================================================
+# Phase 5: Plots — Brain (100kb)
+# =====================================================================
+
+rule plot_brain_dev_k2:
+    """Brain ES vs differentiation K=2 (100kb)."""
+    input:
+        W = "output/nmf_brain_100000_k2/W_nmf_k2.tsv",
+    output: "plot/brain_dev_k2_100kb.png"
+    log:    "logs/plot_brain_dev_k2_100kb.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_brain_dev_k2_100kb.py >& {log}"
+
+
+rule plot_brain_dev_loci:
+    """Brain developmental loci K=3 (100kb)."""
+    input:
+        W = "output/nmf_brain_100000/W_nmf_k3.tsv",
+        H = "output/nmf_brain_100000/H_nmf_k3.tsv",
+    output: "plot/brain_dev_loci_100kb.png"
+    log:    "logs/plot_brain_dev_loci_100kb.log"
+    conda:  CONDA_ENV
+    shell:
+        "python src/plot_brain_dev_loci_100kb.py >& {log}"
+
+
+# =====================================================================
+# Phase 5: Plots — Contact map overview
+# =====================================================================
+
 rule plot_contact_maps:
-    """Visualize NMF component contact maps."""
+    """NMF component contact map visualization."""
     input:
         W = "output/nmf_{res}/W_nmf_k{k}.tsv",
-    output:
-        png = "plot/contact_maps_{res}_k{k}.png",
-    log:
-        "logs/plot_contact_maps_{res}_k{k}.log",
-    conda:
-        CONDA_ENV
+    output: "plot/contact_maps_{res}_k{k}.png"
+    log:    "logs/plot_contact_maps_{res}_k{k}.log"
+    conda:  CONDA_ENV
     shell:
         """
         python src/plot_contact_maps.py \
             --input output/nmf_{wildcards.res} \
             --k {wildcards.k} \
             --resolution {wildcards.res} \
-            --output {output.png} \
+            --output {output} \
             >& {log}
         """

@@ -5,13 +5,21 @@
 # Input: output/simulation_100000/thunder_input.tsv
 # Output: output/simulation_100000/thunder_W_k4.tsv, thunder_H_k4_raw.tsv
 
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 3) {
+  stop("Usage: Rscript run_thunder_extract_W.R <input.tsv> <output_W.tsv> <output_H.tsv>")
+}
+input_path <- args[1]
+output_W_path <- args[2]
+output_H_path <- args[3]
+
 user_lib <- "/home/koki/R/x86_64-conda-linux-gnu-library/4.5"
 .libPaths(c(user_lib, .libPaths()))
 library(NMF)
 
-cat("Loading THUNDER full-genome results...\n")
+cat("Loading THUNDER input...\n")
 
-raw_mix <- read.delim("output/simulation_100000/thunder_input.tsv", check.names=FALSE)
+raw_mix <- read.delim(input_path, check.names=FALSE)
 mix_mat <- as.matrix(raw_mix[, 3:ncol(raw_mix)])
 rs <- rowSums(mix_mat)
 keep <- rs > 0
@@ -28,11 +36,9 @@ cat("H:", nrow(H_thunder), "x", ncol(H_thunder), "\n")
 # Save W with feature info
 feature_names <- raw_mix$feature_name[keep]
 out <- data.frame(feature_name=feature_names, W_thunder)
-write.table(out, "output/simulation_100000/thunder_W_k4.tsv", sep="\t",
-            quote=FALSE, row.names=FALSE)
+write.table(out, output_W_path, sep="\t", quote=FALSE, row.names=FALSE)
 
 # Also save H
-write.table(H_thunder, "output/simulation_100000/thunder_H_k4_raw.tsv", sep="\t",
-            quote=FALSE)
+write.table(H_thunder, output_H_path, sep="\t", quote=FALSE)
 
-cat("[saved]\n")
+cat("[saved]", output_W_path, output_H_path, "\n")

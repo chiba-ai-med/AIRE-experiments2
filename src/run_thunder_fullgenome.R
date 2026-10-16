@@ -5,6 +5,13 @@
 # Output: output/simulation_100000/thunder_H_fullgenome.tsv
 # Runtime: ~28 min on full genome (1.17M features, nrun=10)
 
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 2) {
+  stop("Usage: Rscript run_thunder_fullgenome.R <input.tsv> <output_H.tsv>")
+}
+input_path <- args[1]
+output_path <- args[2]
+
 user_lib <- "/home/koki/R/x86_64-conda-linux-gnu-library/4.5"
 .libPaths(c(user_lib, .libPaths()))
 library(NMF)
@@ -14,8 +21,8 @@ library(dplyr)
 cat("=== THUNDER Full Genome Pipeline ===\n\n")
 
 # Load full data
-cat("[load] reading thunder_input.tsv...\n")
-raw_mix <- read.delim("output/simulation_100000/thunder_input.tsv", check.names=FALSE)
+cat("[load] reading", input_path, "...\n")
+raw_mix <- read.delim(input_path, check.names=FALSE)
 cat("  ", nrow(raw_mix), "features x", ncol(raw_mix)-2, "samples\n")
 
 mix_mat <- as.matrix(raw_mix[, 3:ncol(raw_mix)])
@@ -62,5 +69,5 @@ H_norm <- sweep(H_final, 2, colSums(H_final), "/")
 cat("\n=== THUNDER Estimated Proportions (Full Genome) ===\n")
 print(round(t(H_norm), 3))
 
-write.table(t(H_norm), "output/simulation_100000/thunder_H_fullgenome.tsv", sep="\t", quote=FALSE)
-cat("\n[saved] thunder_H_fullgenome.tsv\n")
+write.table(t(H_norm), output_path, sep="\t", quote=FALSE)
+cat("\n[saved]", output_path, "\n")
