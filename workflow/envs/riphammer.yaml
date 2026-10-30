@@ -10,6 +10,8 @@ dependencies:
   - cooler>=0.9
   - cooltools>=0.5
   - matplotlib>=3.5
+  - scipy>=1.10
+  - scanpy>=1.9
   - pip
   - pip:
     - -e /home/koki/dev/RIPHAMMER

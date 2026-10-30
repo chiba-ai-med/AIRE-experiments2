@@ -1,0 +1,63 @@
+genome: mm10
+
+scHiC_datasets:
+  gage_seq:
+    label: "GAGE-seq (Zhou et al. 2024, Nat Genet)"
+    geo: GSE238001
+    # Per-sample FTP path: /geo/samples/GSM{nnn}nnn/GSM{full}/suppl/
+    ftp_base: "https://ftp.ncbi.nlm.nih.gov/geo/samples"
+    libraries:
+      mBC_0716_1:
+        pairs_gsm: "GSM7657698"
+        pairs: "GSM7657698_contact_mBC-HiC-0716-1.pairs.gz"
+        rna_gsm: "GSM7657697"
+        rna: "GSM7657697_RNA_mBC-RNA-0716-1.tsv.gz"
+      mBC_0716_2:
+        pairs_gsm: "GSM7657700"
+        pairs: "GSM7657700_contact_mBC-HiC-0716-2.pairs.gz"
+        rna_gsm: "GSM7657699"
+        rna: "GSM7657699_RNA_mBC-RNA-0716-2.tsv.gz"
+      mBC_0814_1:
+        pairs_gsm: "GSM7657702"
+        pairs: "GSM7657702_contact_mBC-HiC-0814-1.pairs.gz"
+        rna_gsm: "GSM7657701"
+        rna: "GSM7657701_RNA_mBC-RNA-0814-1.tsv.gz"
+
+  droplet_hic:
+    label: "Droplet Hi-C (Chang et al. 2024, Nat Biotech)"
+    geo: GSE253407
+    # Per-sample FTP path: /geo/samples/GSM{nnn}nnn/GSM{full}/suppl/
+    ftp_base: "https://ftp.ncbi.nlm.nih.gov/geo/samples"
+    metadata_file: "GSE253407_Droplet_Hi-C_mouse_ctx_metadata.xls.gz"
+    # Only LC462 and LC716 are Droplet Hi-C mouse cortex (6,235 cells, 20 types)
+    # LC464/LC465/LC608 are Paired Hi-C (separate assay)
+    libraries:
+      LC462:
+        gsm: "GSM8020244"
+        pairs: "GSM8020244_LC462_mm10.sc.pairs.gz"
+        barcodes: "GSM8020244_LC462_valid_bc.txt.gz"
+      LC716:
+        gsm: "GSM8020245"
+        pairs: "GSM8020245_LC716_mm10.sc.pairs.gz"
+        barcodes: "GSM8020245_LC716_valid_bc.txt.gz"
+
+resolution: 100000
+
+chromsizes: "mm10"
+
+pseudobulk:
+  min_cells_per_type: 50
+  min_contacts_per_type: 100000
+
+mixture:
+  n_mixtures: 20
+  seed: 42
+
+nmf:
+  max_iter: 500
+  seed: 42
+  mode: "single"
+  normalize_h: true
+  normalize_bands: true
+
+max_dist_bp: 5000000

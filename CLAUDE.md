@@ -35,22 +35,37 @@ Multi-band NMF の Python 実装。別リポジトリ `../RIPHAMMER`（`chiba-ai
 
 ## Dataset
 
-マウス（mm10）バルク Hi-C、計 15 サンプル:
+### バルク Hi-C（本番 deconvolution 用）
+
+マウス（mm10）バルク Hi-C、計 12 サンプル:
 
 | グループ | サンプル数 | ソース |
 |----------|-----------|-------|
 | Thymocyte | 11 | 4D Nucleome Consortium |
 | mTEC | 1 | GSE180937（SRA fastq → nf-core/hic → mcool） |
-| Brain | 3 | Bonev et al. (2017) GSE96107 |
 
 常染色体のみ（chr1–19）。性染色体は十字アーティファクトの原因となるため除外。
+Brain (Bonev 2017, 3サンプル) は K=M=3 で trivial なため drop。
+
+### scHi-C（pseudo-bulk validation 用）
+
+| | GAGE-seq | Droplet Hi-C |
+|---|---|---|
+| 論文 | Zhou et al. 2024, Nat Genet | Chang et al. 2024, Nat Biotech |
+| GEO | GSE238001 | GSE253407 |
+| 組織 | mouse brain cortex | mouse brain cortex |
+| 細胞数 | 9,047 | 6,211 |
+| セルタイプ数 (K) | 3 | 20 |
+| pairs 形式 | ヘッダなし5列, barcode=combinatorial index | 4DN standard 10列, barcode=16bp DNA |
+| アノテーション方法 | RNA から TruncatedSVD+KMeans | 論文付属メタデータ |
 
 ## Validation strategy
 
-1. **Cell-type separation**: H 行列の loading でサンプル–コンポーネント対応を確認
-2. **TAD recovery**: NMF 基底から検出した TAD 境界と実測バルク Hi-C TAD 境界の比較（recall, precision, insulation 相関）
-3. **Biological plausibility**: Aire 遺伝子座（chr10:21.9Mb）の細胞型特異的 TAD 構造
-4. **In-silico mixing**: fold-in で混合比率推定精度を検証（O/E NMF で確認済み、Multi-band NMF では未実施）
+1. **シミュレーション** (完了): RIPHAMMER vs THUNDER vs Standard NMF, K=4, 100kb
+2. **scHi-C pseudo-bulk** (完了): scHi-C からセルタイプ別 pseudo-bulk → 既知比率で混合 (Dirichlet, M=20) → RIPHAMMER → 真の比率との MAE/Pearson r で評価。GAGE-seq (K=3, r=0.735), Droplet Hi-C (K=20, r=0.415), Droplet Hi-C merged (K=5, r=0.515)
+3. **mTEC 本番** (未着手): Thymocyte 11 + mTEC 1 = M=12 で RIPHAMMER 実行、生物学的発見
+
+THUNDER との比較は解像度の差で行う: THUNDER は Tucker 分解 (bins×bins×samples テンソル) のため 100kb (~27,000 bins) では計算コスト的に非現実的。論文ベンチマークも 10Mb のみ。
 
 ## Resolution staging
 
@@ -62,15 +77,23 @@ Multi-band NMF の Python 実装。別リポジトリ `../RIPHAMMER`（`chiba-ai
 
 ```
 workflow/
-  Snakefile
-  envs/             # conda env yaml（riphammer を editable install）
-  config.yaml
-  run.sh
-src/                 # 実験スクリプト（import riphammer して使う）
-data/                # Hi-C データ（gitignore）
-output/              # 結果
+  Snakefile              # 本番パイプライン (simulation + mTEC)
+  scHiC_validation.smk   # scHi-C pseudo-bulk validation パイプライン
+  config.yaml            # 本番設定
+  config_scHiC.yaml      # scHi-C validation 設定
+  envs/                  # conda env yaml
+  run.sh / run_scHiC.sh
+src/                     # 実験スクリプト (Python)
+data/
+  4dn_thymocyte/         # Thymocyte bulk Hi-C mcool
+  mtec/                  # mTEC multiome + bulk Hi-C
+  scHiC/
+    gage_seq/            # GAGE-seq raw, metadata, pseudobulk, mixtures, results
+    droplet_hic/         # Droplet Hi-C K=20 (同構成)
+    droplet_hic_merged/  # Droplet Hi-C K=5 (セルタイプマージ版)
+output/                  # simulation 結果
 plot/  logs/  benchmarks/
-notes/               # 論文ドラフト・サマリー
+notes/                   # 論文ドラフト
 Dockerfile
 ```
 
@@ -82,6 +105,14 @@ Snakemake 駆動。スタイルは AIRE-experiments を踏襲:
 - 全ルールに `conda:` と `container:` 両方
 - ルールは `python src/<task>.py` を呼ぶ（R ではなく Python）
 - ラッパー: `workflow/run.sh`
+
+## 技術的注意事項
+
+- **numpy==1.26.4 固定**: h5py, pandas, numexpr が numpy 1.x でビルドされているため 2.x 不可
+- **pseudo-bulk メモリ**: 全 contacts をリスト保持すると OOM。Counter で on-the-fly ビン集計方式に修正済み
+- **Droplet Hi-C pairs**: `#columns` ヘッダが `chrom1/chrom2` 表記 (4DN standard の `chr1/chr2` と異なる)
+- **Droplet Hi-C barcode**: pairs = 16bp DNA のみ、メタデータ = lib:barcode 形式。`df["bc"]` 列を使用
+- **共有サーバー注意**: 大量データ処理時は RAM 使用量を監視すること
 
 ## Migration from AIRE-experiments
 
